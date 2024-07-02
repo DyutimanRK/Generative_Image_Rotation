@@ -21,7 +21,6 @@ This repository hosts Jupyter notebooks dedicated to training and inference of a
   - Incorporates periodic model checkpoints and performance visualizations using `summarize_performance` function.
   - Automatically organizes saved models and plots into uniquely named folders for each training session.
 
-(Refer to README.md for detailed information)
 
 ### Supervisor:
 Dr. Sayantan Auddy 
