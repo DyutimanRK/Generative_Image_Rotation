@@ -1,7 +1,7 @@
 # Generative_Image_Rotation (Protoplanetary Disk Image Rotation using Pix2Pix cGAN)
 
 ### NOTE : Kindly install the dependencies by running the following code line:
-** pip install -r requirements.txt
+** pip install -r requirements.txt **
 
 ### Overview:
 This repository hosts Jupyter notebooks dedicated to training and inference of a Conditional Generative Adversarial Network (cGAN) based on the Pix2Pix architecture. The project focuses on generating standardized face-on images of Protoplanetary Disks from source images that are randomly oriented, using a dataset obtained from FARGO3D simulations.
