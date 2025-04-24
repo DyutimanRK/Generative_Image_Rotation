@@ -88,10 +88,10 @@ print("TensorFlow version used ",tf.__version__)
 
 
 # Constants and default settings
-no_o_folders = 50                               # Total number of folders
-pxl = 64                                        # Desired pixel value
-save_interval = 2                               # Epoch interval to save the model
-num_epoch = 4                                  # Number of epochs
+no_o_folders = 700                               # Total number of folders
+pxl = 256                                        # Desired pixel value
+save_interval = 20                               # Epoch interval to save the model
+num_epoch = 200                                  # Number of epochs
 
 channel = 1                                      # 1 for grayscale, 3 for colored
 num_batch = 14                                   # Batch size
@@ -144,7 +144,7 @@ if do_you_wish_to_resume_training:
     if latest_model_folder:
         print(f"Latest model folder: {latest_model_folder}")
         # Search for the latest model (h5) file in the latest folder
-        model_files = glob.glob(os.path.join(latest_model_folder, "*.h5"))
+        model_files = glob.glob(os.path.join(latest_model_folder, "*weights.h5"))
         if model_files:
             # Sort model files by timestamp (modification time) and pick the latest
             model_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
@@ -251,31 +251,31 @@ print(len(X), "image diretories are loaded.")
 # In[7]:
 
 
-# To display all the loaded images 
-if (False):
-    fig, axes = plt.subplots(ncols=1, sharex=False,sharey=True, figsize=(15, 5))
+# # To display all the loaded images 
+# if (False):
+#     fig, axes = plt.subplots(ncols=1, sharex=False,sharey=True, figsize=(15, 5))
 
-    k=0
-    for i in X:
-        try:
-            axes.set_title("Run:{}".format(k))
-            plt.imshow(cv2.cvtColor(cv2.imread(i),cv2.COLOR_BGR2RGB))
-            k=k+1
-            display.display(plt.gcf())
-            display.clear_output(wait=True)
-            time.sleep(0.001)
-            if(k%2 == 0):
-                fig, axes = plt.subplots(ncols=1, sharex=False,sharey=True, figsize=(15, 5))
-        except KeyboardInterrupt:
-            break
+#     k=0
+#     for i in X:
+#         try:
+#             axes.set_title("Run:{}".format(k))
+#             plt.imshow(cv2.cvtColor(cv2.imread(i),cv2.COLOR_BGR2RGB))
+#             k=k+1
+#             display.display(plt.gcf())
+#             display.clear_output(wait=True)
+#             time.sleep(0.001)
+#             if(k%2 == 0):
+#                 fig, axes = plt.subplots(ncols=1, sharex=False,sharey=True, figsize=(15, 5))
+#         except KeyboardInterrupt:
+#             break
 
 
 # In[8]:
 
 
-# deallocating the unreferenced objects and freeing up memory (OPTIONAL)
-import gc
-gc.collect()
+# # deallocating the unreferenced objects and freeing up memory (OPTIONAL)
+# import gc
+# gc.collect()
 
 
 # In[9]:
@@ -452,7 +452,7 @@ def summarize_performance(epch, g_model, dataset, direct, n_samples=3):
     plt.close()
 
     # Save the generator model
-    filename2 = f'NoATTN_modelWeight_EP{epch:03d}_{FD}.h5'
+    filename2 = f'NoATTN_modelWeight_EP{epch:03d}_{FD}.weights.h5'
     model_path = os.path.join(direct, filename2)
     g_model.save_weights(model_path)
      
@@ -547,7 +547,7 @@ def train(d_model, g_model, gan_model, dataset, val_batch, n_epochs, n_batch):
         
         
         # Validation Loss Calculation at end of each epoch
-        if (i + 1) % bat_per_epo == 0:  # end of each epoch
+        if (i + 1) % (5*bat_per_epo) == 0:  # end of each epoch
             [val_realA, val_realB] = val_batch            
             val_fakeB = g_model.predict(val_realA)
             val_d_loss_real = d_model.evaluate([val_realA, val_realB], ones((len(val_realA), n_patch, n_patch, 1)), verbose=0)
@@ -593,7 +593,7 @@ def train(d_model, g_model, gan_model, dataset, val_batch, n_epochs, n_batch):
                 boolean = False  # Prevent directory setup from happening again
                 
             summarize_performance(last_model_epoch+(i//bat_per_epo +1), g_model, dataset, direct)
-            gc.collect() #freeing up memory (OPTIONAL)
+#             gc.collect() #freeing up memory (OPTIONAL)
             
         counting_batch_per_epoch=counting_batch_per_epoch+1
 

@@ -107,7 +107,7 @@ def define_discriminator(image_shape):
     # compile model
     #The model is trained with a batch size of one image and Adam opt. with a small learning rate and 0.5 beta. 
     #The loss for the discriminator is weighted by 50% for each model update.
-    opt = Adam(lr=0.0002, beta_1=0.5)
+    opt = Adam(learning_rate=0.0002, beta_1=0.5)
     model.compile(loss='binary_crossentropy', optimizer=opt, loss_weights=[0.5])
     return model
 
@@ -165,7 +165,7 @@ def define_gan(g_model, d_model, image_shape):
     # src image as input, generated image and disc. output as outputs
     model = Model(in_src, [dis_out, gen_out])
     # compile model
-    opt = Adam(lr=0.0002, beta_1=0.5)
+    opt = Adam(learning_rate=0.0002, beta_1=0.5)
 
     #Total loss is the weighted sum of adversarial loss (BCE) and L1 loss (MAE)
     model.compile(loss=['binary_crossentropy', 'mae'], optimizer=opt, loss_weights=[1,100])
@@ -179,126 +179,232 @@ def define_gan(g_model, d_model, image_shape):
 # In[3]:
 
 
-# Define encoder block with attention
-def define_encoder_block_with_attention(layer_in, n_filters, batchnorm=True):
-    # Encoder block as before
-    g = define_encoder_block(layer_in, n_filters, batchnorm=batchnorm)
-    # Downsample input tensor to match the spatial dimensions of attention gate output
-    skip_in = Conv2D(n_filters, (1, 1), strides=(2, 2), padding='same')(layer_in)
-    # Apply attention mechanism
-    attention = attention_gate(skip_in, g, n_filters // 2)
-    # Concatenate attention and encoder block output
-    g = Concatenate()([g, attention])
-    return g
+# # Define encoder block with attention
+# def define_encoder_block_with_attention(layer_in, n_filters, batchnorm=True):
+#     # Encoder block as before
+#     g = define_encoder_block(layer_in, n_filters, batchnorm=batchnorm)
+#     # Downsample input tensor to match the spatial dimensions of attention gate output
+#     skip_in = Conv2D(n_filters, (1, 1), strides=(2, 2), padding='same')(layer_in)
+#     # Apply attention mechanism
+#     attention = attention_gate(skip_in, g, n_filters // 2)
+#     # Concatenate attention and encoder block output
+#     g = Concatenate()([g, attention])
+#     return g
 
-########################################################################################################################
+# ########################################################################################################################
 
-# Define decoder block with attention
-def decoder_block_with_attention(layer_in, skip_in, n_filters, dropout=True):
-    # Decoder block as before
-    g = decoder_block(layer_in, skip_in, n_filters, dropout=dropout)
-    # Apply attention mechanism
-    attention = attention_gate(g, skip_in, n_filters // 2)
-    # Concatenate attention and decoder block output
-    g = Concatenate()([g, attention])
-    return g
+# # Define decoder block with attention
+# def decoder_block_with_attention(layer_in, skip_in, n_filters, dropout=True):
+#     # Decoder block as before
+#     g = decoder_block(layer_in, skip_in, n_filters, dropout=dropout)
+#     # Apply attention mechanism
+#     attention = attention_gate(g, skip_in, n_filters // 2)
+#     # Concatenate attention and decoder block output
+#     g = Concatenate()([g, attention])
+#     return g
 
-########################################################################################################################
+# ########################################################################################################################
 
-# Attention gate
+# # Attention gate
+# def attention_gate(x, g, inter_channels):
+#     # Inter-channel attention
+#     theta_x = Conv2D(inter_channels, kernel_size=1, strides=1, padding='same')(x)
+#     phi_g = Conv2D(inter_channels, kernel_size=1, strides=1, padding='same')(g)
+#     f = Activation('relu')(Add()([theta_x, phi_g]))
+#     psi_f = Conv2D(1, kernel_size=1, strides=1, padding='same')(f)
+#     rate = Activation('sigmoid')(psi_f)
+
+#     # Apply attention gate
+#     attention = Multiply()([x, rate])
+
+#     return attention
+
+
+# In[4]:
+
+
+# Attention Gate (Improved)
 def attention_gate(x, g, inter_channels):
-    # Inter-channel attention
     theta_x = Conv2D(inter_channels, kernel_size=1, strides=1, padding='same')(x)
+    theta_x = BatchNormalization()(theta_x)
+
     phi_g = Conv2D(inter_channels, kernel_size=1, strides=1, padding='same')(g)
-    f = Activation('relu')(Add()([theta_x, phi_g]))
+    phi_g = BatchNormalization()(phi_g)
+
+    f = LeakyReLU(alpha=0.1)(Add()([theta_x, phi_g]))
+
     psi_f = Conv2D(1, kernel_size=1, strides=1, padding='same')(f)
+    psi_f = BatchNormalization()(psi_f)
     rate = Activation('sigmoid')(psi_f)
 
-    # Apply attention gate
     attention = Multiply()([x, rate])
-
     return attention
+
+# ------------------------------------------
+# Encoder Block with Attention
+def define_encoder_block_with_attention(layer_in, n_filters, batchnorm=True):
+    # Basic encoder conv
+    g = Conv2D(n_filters, kernel_size=4, strides=2, padding='same')(layer_in)
+    if batchnorm:
+        g = BatchNormalization()(g)
+    g = LeakyReLU(alpha=0.2)(g)
+
+    # Attention applied to input (skip connection)
+    attention = attention_gate(layer_in, g, n_filters // 2)
+    g = Concatenate()([g, attention])
+    return g
+
+# ------------------------------------------
+# Decoder Block with Attention (Attention applied *before* concat)
+def decoder_block_with_attention(layer_in, skip_in, n_filters, dropout=True):
+    g = Conv2DTranspose(n_filters, kernel_size=4, strides=2, padding='same')(layer_in)
+    g = BatchNormalization()(g)
+    if dropout:
+        g = Dropout(0.5)(g)
+    g = Activation('relu')(g)
+
+    # Apply attention to skip connection, then concat
+    attention = attention_gate(skip_in, g, n_filters // 2)
+    g = Concatenate()([g, attention])
+    return g
 
 
 # _____________________________
 
 # ### Generator without Attention
 
-# In[4]:
+# In[5]:
 
 
-# define the standalone generator model - U-net
-def define_generator(image_shape):      
-    # weight initialization
+# # define the standalone generator model - U-net
+# def define_generator(image_shape):      
+#     # weight initialization
+#     init = RandomNormal(stddev=0.02)
+#     # image input
+#     in_image = Input(shape=image_shape)
+
+#     e1 = define_encoder_block(in_image, 64, batchnorm=False)
+#     e2 = define_encoder_block(e1, 128)
+#     e3 = define_encoder_block(e2, 256)
+#     e4 = define_encoder_block(e3, 512)
+#     e5 = define_encoder_block(e4, 512)
+# #         e6 = define_encoder_block(e5, 512)
+# #         e7 = define_encoder_block(e6, 512) #this should be included if images are 256x256 (e6, e7, b,d1, d2 should be accordingly placed in places)
+# #         e8 = define_encoder_block(e7, 512) #this should be included if images are 512x512
+#     # bottleneck, no batch norm and relu
+#     b = Conv2D(512, (4,4), strides=(2,2), padding='same', kernel_initializer=init)(e5) #this would be (e7) in case of 256x256
+#     b = Activation('relu')(b)
+
+# #         d0 = decoder_block(b, e8, 512) #this should be included if images are 512x512
+# #         d1 = decoder_block(b, e7, 512) #this should be included if images are 256x256
+# #         d2 = decoder_block(d1, e6, 512) #the b will change to d1 if resolution is increased
+#     d3 = decoder_block(b, e5, 512)
+#     d4 = decoder_block(d3, e4, 512, dropout=False)
+#     d5 = decoder_block(d4, e3, 256, dropout=False)
+#     d6 = decoder_block(d5, e2, 128, dropout=False)
+#     d7 = decoder_block(d6, e1, 64, dropout=False)
+
+#     # output
+#     g = Conv2DTranspose(image_shape[2], (4,4), strides=(2,2), padding='same', kernel_initializer=init)(d7) #Modified 
+#     out_image = Activation('tanh')(g)  #Generates images in the range -1 to 1. So we change inputs also to -1 to 1
+
+#     # define model
+#     model = Model(in_image, out_image)
+#     return model
+
+def define_generator(image_shape):
     init = RandomNormal(stddev=0.02)
-    # image input
     in_image = Input(shape=image_shape)
 
+    # Encoder blocks
     e1 = define_encoder_block(in_image, 64, batchnorm=False)
     e2 = define_encoder_block(e1, 128)
     e3 = define_encoder_block(e2, 256)
     e4 = define_encoder_block(e3, 512)
     e5 = define_encoder_block(e4, 512)
-#         e6 = define_encoder_block(e5, 512)
-#         e7 = define_encoder_block(e6, 512) #this should be included if images are 256x256 (e6, e7, b,d1, d2 should be accordingly placed in places)
-#         e8 = define_encoder_block(e7, 512) #this should be included if images are 512x512
-    # bottleneck, no batch norm and relu
-    b = Conv2D(512, (4,4), strides=(2,2), padding='same', kernel_initializer=init)(e5) #this would be (e7) in case of 256x256
+
+    # Bottleneck
+    b = Conv2D(512, (4,4), strides=(2,2), padding='same', kernel_initializer=init)(e5)
     b = Activation('relu')(b)
 
-#         d0 = decoder_block(b, e8, 512) #this should be included if images are 512x512
-#         d1 = decoder_block(b, e7, 512) #this should be included if images are 256x256
-#         d2 = decoder_block(d1, e6, 512) #the b will change to d1 if resolution is increased
+    # Decoder blocks
     d3 = decoder_block(b, e5, 512)
     d4 = decoder_block(d3, e4, 512, dropout=False)
     d5 = decoder_block(d4, e3, 256, dropout=False)
     d6 = decoder_block(d5, e2, 128, dropout=False)
     d7 = decoder_block(d6, e1, 64, dropout=False)
 
-    # output
-    g = Conv2DTranspose(image_shape[2], (4,4), strides=(2,2), padding='same', kernel_initializer=init)(d7) #Modified 
-    out_image = Activation('tanh')(g)  #Generates images in the range -1 to 1. So we change inputs also to -1 to 1
+    # Output layer
+    g = Conv2DTranspose(image_shape[2], (4,4), strides=(2,2), padding='same', kernel_initializer=init)(d7)
+    out_image = Activation('tanh')(g)
 
-    # define model
-    model = Model(in_image, out_image)
-    return model
+    return Model(in_image, out_image)
 
 
 # ### Generator with Attention
 
-# In[5]:
+# In[6]:
 
 
-# Define the standalone generator model - U-net with attention
+# # Define the standalone generator model - U-net with attention
+# def define_generator_with_attention(image_shape):
+
+#     # weight initialization
+#     init = RandomNormal(stddev=0.02)
+#     # image input
+#     in_image = Input(shape=image_shape)
+
+#     e1 = define_encoder_block_with_attention(in_image, 64, batchnorm=False)
+#     e2 = define_encoder_block_with_attention(e1, 128)
+#     e3 = define_encoder_block_with_attention(e2, 256)
+#     e4 = define_encoder_block_with_attention(e3, 512)
+#     e5 = define_encoder_block_with_attention(e4, 512)
+# #         e6 = define_encoder_block_with_attention(e5, 512)
+# #         e7 = define_encoder_block_with_attention(e6, 512)
+#     b = Conv2D(512, (4, 4), strides=(2, 2), padding='same', kernel_initializer=init)(e5)
+#     b = Activation('relu')(b)
+# #         d1 = decoder_block_with_attention(b, e7, 512)
+# #         d2 = decoder_block_with_attention(d1, e6, 512)
+#     d3 = decoder_block_with_attention(b, e5, 512)
+#     d4 = decoder_block_with_attention(d3, e4, 512, dropout=False)
+#     d5 = decoder_block_with_attention(d4, e3, 256, dropout=False)
+#     d6 = decoder_block_with_attention(d5, e2, 128, dropout=False)
+#     d7 = decoder_block_with_attention(d6, e1, 64, dropout=False)
+
+#     g = Conv2DTranspose(image_shape[2], (4, 4), strides=(2, 2), padding='same', kernel_initializer=init)(d7)
+#     out_image = Activation('tanh')(g)
+
+#     model = Model(in_image, out_image)
+#     return model
+
+
 def define_generator_with_attention(image_shape):
-
-    # weight initialization
     init = RandomNormal(stddev=0.02)
-    # image input
     in_image = Input(shape=image_shape)
 
-    e1 = define_encoder_block_with_attention(in_image, 64, batchnorm=False)
-    e2 = define_encoder_block_with_attention(e1, 128)
-    e3 = define_encoder_block_with_attention(e2, 256)
-    e4 = define_encoder_block_with_attention(e3, 512)
-    e5 = define_encoder_block_with_attention(e4, 512)
-#         e6 = define_encoder_block_with_attention(e5, 512)
-#         e7 = define_encoder_block_with_attention(e6, 512)
+    # Encoder blocks (standard, no attention here)
+    e1 = define_encoder_block(in_image, 64, batchnorm=False)
+    e2 = define_encoder_block(e1, 128)
+    e3 = define_encoder_block(e2, 256)
+    e4 = define_encoder_block(e3, 512)
+    e5 = define_encoder_block(e4, 512)
+
+    # Bottleneck
     b = Conv2D(512, (4, 4), strides=(2, 2), padding='same', kernel_initializer=init)(e5)
     b = Activation('relu')(b)
-#         d1 = decoder_block_with_attention(b, e7, 512)
-#         d2 = decoder_block_with_attention(d1, e6, 512)
+
+    # Decoder blocks (with attention)
     d3 = decoder_block_with_attention(b, e5, 512)
     d4 = decoder_block_with_attention(d3, e4, 512, dropout=False)
     d5 = decoder_block_with_attention(d4, e3, 256, dropout=False)
     d6 = decoder_block_with_attention(d5, e2, 128, dropout=False)
     d7 = decoder_block_with_attention(d6, e1, 64, dropout=False)
 
+    # Output layer
     g = Conv2DTranspose(image_shape[2], (4, 4), strides=(2, 2), padding='same', kernel_initializer=init)(d7)
     out_image = Activation('tanh')(g)
 
-    model = Model(in_image, out_image)
-    return model
+    return Model(in_image, out_image)
 
 
 # ### Network Setup complete.
